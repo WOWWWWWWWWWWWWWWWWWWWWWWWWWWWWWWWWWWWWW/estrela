@@ -9,7 +9,6 @@ local file = args[2]
 local io = require "io"
 local open = io.open
 
-local interpret = require "interpret"
 local State = require "state"
 
 local function read(fn)
@@ -26,7 +25,7 @@ local function transpile(fn, input)
 
     local stem = fn:match("(.+)%..+")
     local o = open(stem .. ".lua", "w")
-    o:write(interpret(State:new(input)))
+    o:write(State:new(input):interpret())
     o:close()
 end
 

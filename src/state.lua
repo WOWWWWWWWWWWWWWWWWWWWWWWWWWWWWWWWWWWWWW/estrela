@@ -7,6 +7,7 @@ function State:new(input, state)
 
     state.input = input
     state.stack = state.stack or {}
+    state.imports = state.imports or {}
 
     state.unsafe = state.unsafe or true
     state.safe = not state.unsafe
@@ -34,10 +35,32 @@ function State:pushStack(object)
 end
 
 function State:popStack(count, _if)
-    if not _if or _if(self.stack) then
-        local r = {}
-        for i = 1, count do insert(r, remove(self.stack, 1)) end
-        return unpack(r)
+    local r = {}
+    for i = 1, count do insert(r, remove(self.stack, 1)) end
+    return unpack(r)
+end
+
+local interpret = require "interpret"
+local imports = require "imports"
+
+function State:interpret(depth)
+    depth = depth or 0
+
+    local code = interpret(self, depth)
+    if depth == 0 then
+        local importCode = "--// Imports\n\n"
+
+        for name, _ in pairs(self.imports) do
+            local import = imports[name]
+            assert(self.unsafe or import,
+                   "Import `" .. name .. "` does not exist.")
+            importCode = importCode .. "--/ " .. name .. "\n" .. import ..
+                             "\n\n"
+        end
+
+        return importCode .. "--// Main\n\n" .. code
+    else
+        return "--// λ " .. depth .. "\n" .. code
     end
 end
 

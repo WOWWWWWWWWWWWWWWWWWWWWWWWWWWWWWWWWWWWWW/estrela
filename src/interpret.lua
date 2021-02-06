@@ -1,4 +1,5 @@
 local interpret
+local unicode = "[%z\1-\127\194-\244][\128-\191]*"
 
 local commands = {}
 local function add(symbol, description, f)
@@ -10,8 +11,12 @@ local function add(symbol, description, f)
     end
 end
 
+local import
+
 local insert = table.insert
+local concat = table.concat
 local gsub = string.gsub
+local sub = string.sub
 do
     -- Constants
     add("⒑", "Push 10 to stack", function(state)
@@ -38,7 +43,7 @@ do
 
     -- String literals
     local function pushstring(state, v)
-        local r = {type = "string", v = v}
+        local r = {type = "table", v = v}
 
         function r:transpile()
             local replace = {
@@ -51,7 +56,9 @@ do
             local v = self.v
             for from, to in pairs(replace) do v = gsub(v, from, to) end
 
-            return '"' .. v .. '"'
+            v = gsub(v, unicode, function(c) return '"' .. c .. '", ' end)
+            v = sub(v, 1, -3)
+            return '{' .. v .. '}'
         end
 
         state:pushStack(r)
@@ -78,10 +85,39 @@ do
             state:pushStack(r)
         end)
     end
+
+    add("¹", "Push first element of a", function(state)
+        local a = state:popStack(1)
+
+        local chk = a.type
+        if chk ~= "table" and chk ~= "unknown" then
+            print("warning at ¹: type inference shows `a` is not a table")
+        end
+
+        local r = {type = "unknown", table = a}
+        function r:transpile() return self.table.variable .. "[1]" end
+
+        state:pushStack(r)
+    end)
+
+    add("ⁿ", "Push last element of a", function(state)
+        local a = state:popStack(1)
+
+        local chk = a.type
+        if chk ~= "table" and chk ~= "unknown" then
+            print("warning at ⁿ: type inference shows `a` is not a table")
+        end
+
+        local r = {type = "unknown", table = a}
+        function r:transpile()
+            return self.table.variable .. "[#" .. self.table.variable .. "]"
+        end
+
+        state:pushStack(r)
+    end)
 end
 
 local gmatch = string.gmatch
-local concat = table.concat
 interpret = function(state)
     local stack = state.stack
     local buffer = {}
@@ -91,7 +127,7 @@ interpret = function(state)
                "local " .. object.variable .. " = " .. object:transpile())
     end)
 
-    local iter = gmatch(state.input, "[%z\1-\127\194-\244][\128-\191]*")
+    local iter = gmatch(state.input, unicode)
 
     function state.lookFor(character)
         local r = {}
@@ -108,6 +144,8 @@ interpret = function(state)
     end
 
     function state.next() return iter() end
+
+    function import(name) state.imports[name] = true end
 
     local tk = iter()
     assert(tk, "file is empty")
