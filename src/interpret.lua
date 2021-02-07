@@ -29,15 +29,13 @@ do
     -- Numeric literals
     for i = 0, 9 do
         add(tostring(i), "Numeric literal " .. i, function(state)
-            local stack = state.stack
-            local head = stack[1]
-
-            if head and head.concatableNumber then
-                head.v = head.v * 10 + i
+            local head = state.currentNumber
+            if head then
+                head.v = (head.v * 10) + i
             else
                 local r = {v = i, concatableNumber = true}
                 function r:transpile() return self.v end
-                state:pushStack(r)
+                state.currentNumber = r
             end
         end)
     end
@@ -93,27 +91,29 @@ do
     add("⊷", "Prepend b to a", function(state)
         state:import("insert")
 
-        local a, b = state:popStack(1)
+        local b = state:popStack(1)
+        local a = state.stack[0]
 
-        local r = {statement = true, a = a, b = b}
-        function r:transpile()
-            return "insert(" .. self.a.variable .. ", 1, " .. self.b.variable ..
-                       ")"
-        end
-
-        state:pushStack(r)
+        state.push("insert(" .. self.a.variable .. ", 1, " .. self.b.variable ..
+                       ")")
     end)
 
     add("⊶", "Append b to a", function(state)
         state:import("insert")
 
-        local a, b = state:popStack(1)
+        local b = state:popStack(1)
+        local a = state.stack[0]
 
-        local r = {statement = true, a = a, b = b}
-        function r:transpile()
-            return "insert(" .. self.a.variable .. ", " .. self.b.variable ..
-                       ")"
-        end
+        state.push("insert(" .. self.a.variable .. ", " .. self.b.variable ..
+                       ")")
+    end)
+
+    add("⇥", "Push joined table a", function(state)
+        import("concat")
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return "concat(" .. self.a.variable .. ")" end
 
         state:pushStack(r)
     end)
@@ -156,7 +156,42 @@ do
 
     -- Unary
 
-    add("∅", "Pop", function(state) state:popStack(1) end)
+    add("⭝", "Pop stack", function(state) state:popStack(1) end)
+
+    local function reverse(tbl)
+        local len = #tbl
+        local ret = {}
+
+        for i = len, 1, -1 do
+            ret[ len - i + 1 ] = tbl[ i ]
+        end
+
+        return ret
+    end
+
+    add("↺", "Reverse stack", function(state)
+        state.stack = reverse(state.stack)
+    end)
+
+    add(":", "Duplicate a", function(state)
+        local a = state:popStack(1)
+
+        for i = 1, 2 do
+            local r = {a = a}
+            function r:transpile() return self.a.variable end
+            state:pushStack(r)
+        end
+    end)
+
+    add("⋮", "Triplicate a", function(state)
+        local a = state:popStack(1)
+
+        for i = 1, 3 do
+            local r = {a = a}
+            function r:transpile() return self.a.variable end
+            state:pushStack(r)
+        end
+    end)
 
     add("⏟", "Wrap a in table", function(state)
         local a = state:popStack(1)
@@ -187,11 +222,22 @@ do
         state:pushStack(r)
     end)
 
+    add("ⁿ", "Pop last element of a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile()
+            return self.a.variable .. "[#" .. self.a.variable .. "]"
+        end
+
+        state:pushStack(r)
+    end)
+
     add("⤼", "Decrement a", function(state)
         local a = state:popStack(1)
 
         local r = {a = a}
-        function r:transpile() return self.a.variable .. " - " .. "1" end
+        function r:transpile() return self.a.variable .. " - 1" end
 
         state:pushStack(r)
     end)
@@ -200,7 +246,52 @@ do
         local a = state:popStack(1)
 
         local r = {a = a}
-        function r:transpile() return self.a.variable .. " + " .. "1" end
+        function r:transpile() return self.a.variable .. " + 1" end
+
+        state:pushStack(r)
+    end)
+
+    add("½", "Half a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " / 2" end
+
+        state:pushStack(r)
+    end)
+
+    add("⅟", "Push inverse of a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return "1 / " .. self.a.variable end
+
+        state:pushStack(r)
+    end)
+
+    add("↞", "Double a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " * 2" end
+
+        state:pushStack(r)
+    end)
+
+    add("⑽", "Multiply a by ten", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " * 10" end
+
+        state:pushStack(r)
+    end)
+
+    add("°", "Push a to the tenth power", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " ^ 10" end
 
         state:pushStack(r)
     end)
@@ -211,37 +302,28 @@ do
 
         local childState, start = state:block()
         childState.stack = {{variable = "element"}}
+        local block = start()
 
-        local r = {statement = true, a = a, block = start()}
-        function r:transpile()
-            local indent = rep("\t", state.depth)
-            local mapStatement = ""
-            if childState.stack[1] then
-                mapStatement = self.a.variable .. "[index] = " ..
-                                   childState.stack[1].variable
-            end
-            return
-                "for index, element in pairs(" .. self.a.variable .. ") do\n" ..
-                    self.block .. "\n\t" .. indent .. mapStatement .. "\n" ..
-                    indent .. "end\n"
-        end
+        local indent = rep("\t", state.depth)
+        local mapStatement =
+            childState.stack[1] and a.variable .. "[index] = " ..
+                childState.stack[1].variable or ""
 
-        state:pushStack(r)
+        state.push("for index, element in pairs(" .. a.variable .. ") do\n" ..
+                       block .. "\n\t" .. indent .. mapStatement .. "\n" ..
+                       indent .. "end\n")
     end)
 end
 
 local gmatch = string.gmatch
+local match = string.match
 interpret = function(state)
     local stack = state.stack
     local buffer = {}
 
     state:onPushStack(function(object)
-        local prefix = ""
-        if not object.statement then
-            prefix = "local " .. object.variable .. " = "
-        end
-
-        insert(buffer, prefix .. object:transpile())
+        insert(buffer,
+               "local " .. object.variable .. " = " .. object:transpile())
     end)
 
     state.iter = state.iter or gmatch(state.input, unicode)
@@ -261,6 +343,8 @@ interpret = function(state)
         return concat(r)
     end
 
+    function state.push(str) insert(buffer, str) end
+
     local tk = iter()
     assert(tk, "file is empty")
     repeat
@@ -271,6 +355,12 @@ interpret = function(state)
         command.f(state)
 
         tk = iter()
+
+        -- ugly hack
+        if state.currentNumber and (not tk or not match(tk, "%d+")) then
+            state:pushStack(state.currentNumber)
+            state.currentNumber = nil
+        end
     until not tk or tk == ")"
 
     if state.depth > 0 then

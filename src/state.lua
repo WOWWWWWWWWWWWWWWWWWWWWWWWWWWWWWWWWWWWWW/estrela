@@ -26,7 +26,8 @@ function State:pushStack(object)
         assert(object.transpile, "Safemode: No `transpile` on object")
     end
 
-    object.variable = "__" .. (#self.stack + 1)
+    object.variable = "_" .. (self.depth ~= 0 and self.depth or "") .. "_" ..
+                          (#self.stack + 1)
 
     for _, event in pairs(self.events.onPushStack) do event(object) end
     insert(self.stack, 1, object)
