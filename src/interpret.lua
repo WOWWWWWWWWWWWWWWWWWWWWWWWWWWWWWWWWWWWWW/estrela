@@ -21,7 +21,7 @@ local rep = string.rep
 do
     -- Constants
     add("⒑", "Push 10 to stack", function(state)
-        local r = {type = "number"}
+        local r = {}
         function r:transpile() return 10 end
         state:pushStack(r)
     end)
@@ -32,10 +32,10 @@ do
             local stack = state.stack
             local head = stack[1]
 
-            if head and head.type == "number" and head.concatable then
+            if head and head.concatableNumber then
                 head.v = head.v * 10 + i
             else
-                local r = {type = "number", v = i, concatable = true}
+                local r = {v = i, concatableNumber = true}
                 function r:transpile() return self.v end
                 state:pushStack(r)
             end
@@ -44,7 +44,7 @@ do
 
     -- String literals
     local function pushstring(state, v)
-        local r = {type = "table", v = v}
+        local r = {v = v}
 
         function r:transpile()
             local replace = {
@@ -70,7 +70,7 @@ do
 
     add("↑", "Print a", function(state)
         local a = state:popStack(1)
-        local r = {type = "statement", a = a}
+        local r = {statement = true, a = a}
         function r:transpile() return "print(" .. self.a.variable .. ")" end
 
         state:pushStack(r)
@@ -80,7 +80,7 @@ do
         state:import("debug")
 
         local a = state:popStack(1)
-        local r = {type = "statement", a = a}
+        local r = {statement = true, a = a}
         function r:transpile() return "_debug(" .. self.a.variable .. ")" end
 
         state:pushStack(r)
@@ -90,14 +90,42 @@ do
 
     -- Binary
 
+    add("⊷", "Prepend b to a", function(state)
+        state:import("insert")
+
+        local a, b = state:popStack(1)
+
+        local r = {statement = true, a = a, b = b}
+        function r:transpile()
+            return "insert(" .. self.a.variable .. ", 1, " .. self.b.variable ..
+                       ")"
+        end
+
+        state:pushStack(r)
+    end)
+
+    add("⊶", "Append b to a", function(state)
+        state:import("insert")
+
+        local a, b = state:popStack(1)
+
+        local r = {statement = true, a = a, b = b}
+        function r:transpile()
+            return "insert(" .. self.a.variable .. ", " .. self.b.variable ..
+                       ")"
+        end
+
+        state:pushStack(r)
+    end)
+
     for _, v in pairs({
         {"+", "Addition"}, {"-", "Subtraction"}, {"*", "Multiplication"},
-        {"/", "Division"}, {"^", "Raise to power"}
+        {"/", "Division"}, {"%", "Modulus"}, {"^", "Raise to power"}
     }) do
         add(v[1], v[2] .. " Operator", function(state)
             local a, b = state:popStack(2)
 
-            local r = {type = "binop", a = a, b = b}
+            local r = {a = a, b = b}
             function r:transpile()
                 return self.a.variable .. " " .. v[1] .. " " .. self.b.variable
             end
@@ -106,12 +134,34 @@ do
         end)
     end
 
+    -- Comparison
+
+    for _, v in pairs({
+        {">", "Greater than"}, {"<", "Less than"},
+        {"≥", "Greater than or equal to", ">="},
+        {"≤", "Less than or equal to", "<="}
+    }) do
+        add(v[1], v[2] .. " Comparison", function(state)
+            local a, b = state:popStack(2)
+
+            local r = {a = a, b = b}
+            function r:transpile()
+                return self.a.variable .. " " .. (v[3] or v[1]) .. " " ..
+                           self.b.variable
+            end
+
+            state:pushStack(r)
+        end)
+    end
+
     -- Unary
+
+    add("∅", "Pop", function(state) state:popStack(1) end)
 
     add("⏟", "Wrap a in table", function(state)
         local a = state:popStack(1)
 
-        local r = {type = "unknown", a = a}
+        local r = {a = a}
         function r:transpile() return "{" .. self.a.variable .. "}" end
 
         state:pushStack(r)
@@ -120,7 +170,7 @@ do
     add("¹", "Push first element of a", function(state)
         local a = state:popStack(1)
 
-        local r = {type = "unknown", a = a}
+        local r = {a = a}
         function r:transpile() return self.a.variable .. "[1]" end
 
         state:pushStack(r)
@@ -129,10 +179,28 @@ do
     add("ⁿ", "Push last element of a", function(state)
         local a = state:popStack(1)
 
-        local r = {type = "unknown", a = a}
+        local r = {a = a}
         function r:transpile()
             return self.a.variable .. "[#" .. self.a.variable .. "]"
         end
+
+        state:pushStack(r)
+    end)
+
+    add("⤼", "Decrement a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " - " .. "1" end
+
+        state:pushStack(r)
+    end)
+
+    add("⤽", "Increment a", function(state)
+        local a = state:popStack(1)
+
+        local r = {a = a}
+        function r:transpile() return self.a.variable .. " + " .. "1" end
 
         state:pushStack(r)
     end)
@@ -142,21 +210,20 @@ do
         local a = state.stack[1]
 
         local childState, start = state:block()
-        childState.stack = {{type = "unknown", variable = "element"}}
+        childState.stack = {{variable = "element"}}
 
-        local r = {type = "statement", a = a, block = start()}
+        local r = {statement = true, a = a, block = start()}
         function r:transpile()
             local indent = rep("\t", state.depth)
             local mapStatement = ""
             if childState.stack[1] then
-                mapStatement = "__mapped[index] = " ..
+                mapStatement = self.a.variable .. "[index] = " ..
                                    childState.stack[1].variable
             end
-            return "local __mapped = {}\n" .. indent ..
-                       "for index, element in pairs(" .. self.a.variable ..
-                       ") do\n" .. self.block .. "\n\t" .. indent ..
-                       mapStatement .. "\n" .. indent .. "end\n" .. indent ..
-                       a.variable .. " = " .. "__mapped"
+            return
+                "for index, element in pairs(" .. self.a.variable .. ") do\n" ..
+                    self.block .. "\n\t" .. indent .. mapStatement .. "\n" ..
+                    indent .. "end\n"
         end
 
         state:pushStack(r)
@@ -170,7 +237,7 @@ interpret = function(state)
 
     state:onPushStack(function(object)
         local prefix = ""
-        if object.type ~= "statement" then
+        if not object.statement then
             prefix = "local " .. object.variable .. " = "
         end
 
@@ -213,7 +280,7 @@ interpret = function(state)
     elseif stack[1] then
         -- find non-statement
         for _, v in pairs(stack) do
-            if v.type ~= "statement" then
+            if not v.statement then
                 state:import("debug")
                 insert(buffer, "_debug(" .. v.variable .. ")")
                 break
