@@ -4,5 +4,7 @@ return {
 
     concat = "local concat = table.concat",
     insert = "local insert = table.insert",
-    remove = "local remove = table.remove"
+    remove = "local remove = table.remove",
+
+    random = "math.randomseed(os.time());local random = math.random"
 }
