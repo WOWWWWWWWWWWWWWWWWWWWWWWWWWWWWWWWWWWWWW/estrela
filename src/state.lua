@@ -2,16 +2,14 @@ local insert = table.insert
 local remove = table.remove
 local State = {}
 
-function State:new(input, state)
-    state = state or {}
-
-    state.input = input
+function State:new(state)
     state.stack = state.stack or {}
     state.imports = state.imports or {}
 
     state.unsafe = state.unsafe or true
     state.safe = not state.unsafe
 
+    state.depth = state.parent and (state.parent.depth + 1) or 0
     state.events = {onPushStack = {}}
 
     setmetatable(state, self)
@@ -36,21 +34,27 @@ end
 
 function State:popStack(count, _if)
     local r = {}
-    for i = 1, count do insert(r, remove(self.stack, 1)) end
+    for i = 1, count do
+        insert(r, remove(self.stack, 1) or
+                   {
+                type = "unknown",
+                variable = "nil --[[ Popped empty stack. ]]"
+            })
+    end
     return unpack(r)
 end
 
 local interpret = require "interpret"
 local imports = require "imports"
 
-function State:interpret(depth)
-    depth = depth or 0
-
-    local code = interpret(self, depth)
+local rep = string.rep
+function State:interpret()
+    local depth = self.depth
+    local code = interpret(self)
     if depth == 0 then
         local importCode = "--// Imports\n\n"
 
-        for name, _ in pairs(self.imports) do
+        for name in pairs(self.imports) do
             local import = imports[name]
             assert(self.unsafe or import,
                    "Import `" .. name .. "` does not exist.")
@@ -60,8 +64,20 @@ function State:interpret(depth)
 
         return importCode .. "--// Main\n\n" .. code
     else
-        return "--// λ " .. depth .. "\n" .. code
+        return rep("\t", depth) .. "--// λ " .. depth .. "\n" .. code
     end
 end
+
+local sub = string.sub
+function State:block()
+    local childState = State:new{parent = self, iter = self.iter}
+    return childState, function()
+        local code = childState:interpret()
+        for import in pairs(childState.imports) do self[import] = true end
+        return code
+    end
+end
+
+function State:import(name) self.imports[name] = true end
 
 return State

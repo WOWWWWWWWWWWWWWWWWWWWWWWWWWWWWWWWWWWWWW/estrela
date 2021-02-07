@@ -25,7 +25,7 @@ local function transpile(fn, input)
 
     local stem = fn:match("(.+)%..+")
     local o = open(stem .. ".lua", "w")
-    o:write(State:new(input):interpret())
+    o:write(State:new{input = input}:interpret())
     o:close()
 end
 

@@ -1,4 +1,5 @@
 local interpret
+
 local unicode = "[%z\1-\127\194-\244][\128-\191]*"
 
 local commands = {}
@@ -11,12 +12,12 @@ local function add(symbol, description, f)
     end
 end
 
-local import
-
 local insert = table.insert
 local concat = table.concat
 local gsub = string.gsub
 local sub = string.sub
+local rep = string.rep
+
 do
     -- Constants
     add("⒑", "Push 10 to stack", function(state)
@@ -31,10 +32,10 @@ do
             local stack = state.stack
             local head = stack[1]
 
-            if head.type == "number" and head.concatable then
+            if head and head.type == "number" and head.concatable then
                 head.v = head.v * 10 + i
             else
-                local r = {type = "number", v = v, concatable = true}
+                local r = {type = "number", v = i, concatable = true}
                 function r:transpile() return self.v end
                 state:pushStack(r)
             end
@@ -67,35 +68,60 @@ do
     add({'`', '`'}, "String literal",
         function(state) pushstring(state, state.lookFor(state.currentMark)) end)
 
+    add("↑", "Print a", function(state)
+        local a = state:popStack(1)
+        local r = {type = "statement", a = a}
+        function r:transpile() return "print(" .. self.a.variable .. ")" end
+
+        state:pushStack(r)
+    end)
+
+    add("⇑", "Verbose print a", function(state)
+        state:import("debug")
+
+        local a = state:popStack(1)
+        local r = {type = "statement", a = a}
+        function r:transpile() return "_debug(" .. self.a.variable .. ")" end
+
+        state:pushStack(r)
+    end)
+
     -- Operators
+
+    -- Binary
 
     for _, v in pairs({
         {"+", "Addition"}, {"-", "Subtraction"}, {"*", "Multiplication"},
         {"/", "Division"}, {"^", "Raise to power"}
     }) do
         add(v[1], v[2] .. " Operator", function(state)
-            local lhs, rhs = state:popStack(2)
+            local a, b = state:popStack(2)
 
-            local r = {type = "binop", lhs = lhs, rhs = rhs}
+            local r = {type = "binop", a = a, b = b}
             function r:transpile()
-                return self.lhs:transpile() .. " " .. v[1] .. " " ..
-                           self.rhs:transpile()
+                return self.a.variable .. " " .. v[1] .. " " .. self.b.variable
             end
 
             state:pushStack(r)
         end)
     end
 
+    -- Unary
+
+    add("⏟", "Wrap a in table", function(state)
+        local a = state:popStack(1)
+
+        local r = {type = "unknown", a = a}
+        function r:transpile() return "{" .. self.a.variable .. "}" end
+
+        state:pushStack(r)
+    end)
+
     add("¹", "Push first element of a", function(state)
         local a = state:popStack(1)
 
-        local chk = a.type
-        if chk ~= "table" and chk ~= "unknown" then
-            print("warning at ¹: type inference shows `a` is not a table")
-        end
-
-        local r = {type = "unknown", table = a}
-        function r:transpile() return self.table.variable .. "[1]" end
+        local r = {type = "unknown", a = a}
+        function r:transpile() return self.a.variable .. "[1]" end
 
         state:pushStack(r)
     end)
@@ -103,14 +129,34 @@ do
     add("ⁿ", "Push last element of a", function(state)
         local a = state:popStack(1)
 
-        local chk = a.type
-        if chk ~= "table" and chk ~= "unknown" then
-            print("warning at ⁿ: type inference shows `a` is not a table")
+        local r = {type = "unknown", a = a}
+        function r:transpile()
+            return self.a.variable .. "[#" .. self.a.variable .. "]"
         end
 
-        local r = {type = "unknown", table = a}
+        state:pushStack(r)
+    end)
+
+    -- statements with blocks
+    add("⇄", "Map each element in a", function(state)
+        local a = state.stack[1]
+
+        local childState, start = state:block()
+        childState.stack = {{type = "unknown", variable = "element"}}
+
+        local r = {type = "statement", a = a, block = start()}
         function r:transpile()
-            return self.table.variable .. "[#" .. self.table.variable .. "]"
+            local indent = rep("\t", state.depth)
+            local mapStatement = ""
+            if childState.stack[1] then
+                mapStatement = "__mapped[index] = " ..
+                                   childState.stack[1].variable
+            end
+            return "local __mapped = {}\n" .. indent ..
+                       "for index, element in pairs(" .. self.a.variable ..
+                       ") do\n" .. self.block .. "\n\t" .. indent ..
+                       mapStatement .. "\n" .. indent .. "end\n" .. indent ..
+                       a.variable .. " = " .. "__mapped"
         end
 
         state:pushStack(r)
@@ -123,11 +169,16 @@ interpret = function(state)
     local buffer = {}
 
     state:onPushStack(function(object)
-        insert(buffer,
-               "local " .. object.variable .. " = " .. object:transpile())
+        local prefix = ""
+        if object.type ~= "statement" then
+            prefix = "local " .. object.variable .. " = "
+        end
+
+        insert(buffer, prefix .. object:transpile())
     end)
 
-    local iter = gmatch(state.input, unicode)
+    state.iter = state.iter or gmatch(state.input, unicode)
+    local iter = state.iter
 
     function state.lookFor(character)
         local r = {}
@@ -143,10 +194,6 @@ interpret = function(state)
         return concat(r)
     end
 
-    function state.next() return iter() end
-
-    function import(name) state.imports[name] = true end
-
     local tk = iter()
     assert(tk, "file is empty")
     repeat
@@ -157,9 +204,22 @@ interpret = function(state)
         command.f(state)
 
         tk = iter()
-    until not tk
+    until not tk or tk == ")"
 
-    if stack[1] then insert(buffer, "print(" .. stack[1].variable .. ")") end
+    if state.depth > 0 then
+        for i, v in pairs(buffer) do
+            buffer[i] = rep("\t", state.depth) .. v
+        end
+    elseif stack[1] then
+        -- find non-statement
+        for _, v in pairs(stack) do
+            if v.type ~= "statement" then
+                state:import("debug")
+                insert(buffer, "_debug(" .. v.variable .. ")")
+                break
+            end
+        end
+    end
 
     return concat(buffer, "\n")
 end
