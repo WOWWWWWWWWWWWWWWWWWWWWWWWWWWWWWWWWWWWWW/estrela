@@ -1,98 +1,97 @@
-local _debug
-do
-    local insert = table.insert
-    local concat = table.concat
+local insert = table.insert
+local concat = table.concat
 
-    local len = string.len
-    local find = string.find
-    local rep = string.rep
+local len = string.len
+local find = string.find
+local rep = string.rep
 
-    -- https://stackoverflow.com/a/42062321/12394274
-    local function print_table(node)
-        local cache, stack, output = {}, {}, {}
-        local depth = 1
-        local output_str = "{\n"
+-- https://stackoverflow.com/a/42062321/12394274
+local function print_table(node)
+    local cache, stack, output = {}, {}, {}
+    local depth = 1
+    local output_str = "{\n"
 
-        while true do
-            local size = 0
-            for k, v in pairs(node) do size = size + 1 end
+    while true do
+        local size = 0
+        for k, v in pairs(node) do size = size + 1 end
 
-            local cur_index = 1
-            for k, v in pairs(node) do
-                if (cache[node] == nil) or (cur_index >= cache[node]) then
+        local cur_index = 1
+        for k, v in pairs(node) do
+            if (cache[node] == nil) or (cur_index >= cache[node]) then
 
-                    if (find(output_str, "}", len(output_str))) then
-                        output_str = output_str .. ",\n"
-                    elseif not (find(output_str, "\n", len(output_str))) then
-                        output_str = output_str .. "\n"
-                    end
-
-                    -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
-                    insert(output, output_str)
-                    output_str = ""
-
-                    local key
-                    if (type(k) == "number" or type(k) == "boolean") then
-                        key = "[" .. tostring(k) .. "]"
-                    else
-                        key = "['" .. tostring(k) .. "']"
-                    end
-
-                    if (type(v) == "number" or type(v) == "boolean") then
-                        output_str = output_str .. rep('\t', depth) .. key ..
-                                         " = " .. tostring(v)
-                    elseif (type(v) == "table") then
-                        output_str = output_str .. rep('\t', depth) .. key ..
-                                         " = {\n"
-                        insert(stack, node)
-                        insert(stack, v)
-                        cache[node] = cur_index + 1
-                        break
-                    else
-                        output_str = output_str .. rep('\t', depth) .. key ..
-                                         " = '" .. tostring(v) .. "'"
-                    end
-
-                    if (cur_index == size) then
-                        output_str =
-                            output_str .. "\n" .. rep('\t', depth - 1) .. "}"
-                    else
-                        output_str = output_str .. ","
-                    end
-                else
-                    -- close the table
-                    if (cur_index == size) then
-                        output_str =
-                            output_str .. "\n" .. rep('\t', depth - 1) .. "}"
-                    end
+                if (find(output_str, "}", len(output_str))) then
+                    output_str = output_str .. ",\n"
+                elseif not (find(output_str, "\n", len(output_str))) then
+                    output_str = output_str .. "\n"
                 end
 
-                cur_index = cur_index + 1
-            end
+                -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
+                insert(output, output_str)
+                output_str = ""
 
-            if (size == 0) then
-                output_str = output_str .. "\n" .. rep('\t', depth - 1) .. "}"
-            end
+                local key
+                if (type(k) == "number" or type(k) == "boolean") then
+                    key = "[" .. tostring(k) .. "]"
+                else
+                    key = "['" .. tostring(k) .. "']"
+                end
 
-            if (#stack > 0) then
-                node = stack[#stack]
-                stack[#stack] = nil
-                depth = cache[node] == nil and depth + 1 or depth - 1
+                if (type(v) == "number" or type(v) == "boolean") then
+                    output_str =
+                        output_str .. rep('\t', depth) .. key .. " = " ..
+                            tostring(v)
+                elseif (type(v) == "table") then
+                    output_str = output_str .. rep('\t', depth) .. key ..
+                                     " = {\n"
+                    insert(stack, node)
+                    insert(stack, v)
+                    cache[node] = cur_index + 1
+                    break
+                else
+                    output_str =
+                        output_str .. rep('\t', depth) .. key .. " = '" ..
+                            tostring(v) .. "'"
+                end
+
+                if (cur_index == size) then
+                    output_str = output_str .. "\n" .. rep('\t', depth - 1) ..
+                                     "}"
+                else
+                    output_str = output_str .. ","
+                end
             else
-                break
+                -- close the table
+                if (cur_index == size) then
+                    output_str = output_str .. "\n" .. rep('\t', depth - 1) ..
+                                     "}"
+                end
             end
+
+            cur_index = cur_index + 1
         end
 
-        -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
-        insert(output, output_str)
-        return concat(output)
+        if (size == 0) then
+            output_str = output_str .. "\n" .. rep('\t', depth - 1) .. "}"
+        end
+
+        if (#stack > 0) then
+            node = stack[#stack]
+            stack[#stack] = nil
+            depth = cache[node] == nil and depth + 1 or depth - 1
+        else
+            break
+        end
     end
 
-    function _debug(...)
-        local args = {...}
-        for i, v in pairs(args) do
-            if type(v) == "table" then args[i] = print_table(v) end
-        end
-        print(unpack(args))
+    -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
+    insert(output, output_str)
+    return concat(output)
+end
+
+return function(...)
+    local args = {...}
+    for i, v in pairs(args) do
+        if type(v) == "table" then args[i] = print_table(v) end
     end
+    print(unpack(args))
 end

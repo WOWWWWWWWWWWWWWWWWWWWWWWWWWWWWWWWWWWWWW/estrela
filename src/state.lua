@@ -59,8 +59,8 @@ function State:interpret()
             local import = imports[name]
             assert(self.unsafe or import,
                    "Import `" .. name .. "` does not exist.")
-            importCode = importCode .. "--/ " .. name .. "\n" .. import ..
-                             "\n\n"
+            importCode = importCode .. "--/ " .. name .. "\n" ..
+                             import:gsub("    ", "") .. "\n\n"
         end
 
         return importCode .. "--// Main\n\n" .. code
