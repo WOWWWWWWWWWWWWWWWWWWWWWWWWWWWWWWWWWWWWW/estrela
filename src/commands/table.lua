@@ -49,9 +49,7 @@ add("↦", "Pop and push first element of a", function(state)
     local a = state:popStack(1)
 
     local r = {a = a}
-    function r:transpile()
-        return "remove(" .. self.a.variable .. ", 1)"
-    end
+    function r:transpile() return "remove(" .. self.a.variable .. ", 1)" end
 
     state:pushStack(r)
 end)
@@ -68,46 +66,71 @@ add("⇥", "Join a", function(state)
     state:pushStack(r)
 end)
 
+local shuffleArrayTemplate = --
+[[for i = #${aVar}, 2, -1 do
+    local j = random(i)
+    ${aVar}[i], ${aVar}[j] = ${aVar}[j], ${aVar}[i]
+end]]
+
 add("⁇", "Fisher-Yates shuffle a", function(state)
-    stat:import("random")
+    state:import("random")
 
     local a = state.stack[1]
-    stat.push(
-        "%1for i = #%2, 2, -1 do\n\t%1local j = random(i)\n\t%1%2[i], %2[j] = %2[j], %2[i]\n%1end",
-        rep("\t", state.depth), a.variable)
+    state.push(i(shuffleArrayTemplate, state, {aVar = a.variable}))
 end)
+
+local numericByteArrayTemplate = --
+[[local _map = {}
+for e in gmatch(${aForVar}, ".") do
+    insert(_map, byte(e))
+end
+${aVar} = _map]]
 
 add("⇔", "Convert a to numeric byte array", function(state)
     state:import("string")
     state:import("table")
 
     local a = state.stack[1]
-    state.push(interpolate(
-                   'local _map = {}\n%1for e in gmatch(%3, ".") do\n\t%1insert(_map, byte(e))\n%1end\n%1%2 = _map',
-                   rep("\t", state.depth), a.variable,
-                   a.table and "concat(" .. a.variable .. ")" or a.variable))
+    state.push(i(numericByteArrayTemplate, state, {
+        aVar = a.variable,
+        aForVar = a.table and "concat(" .. a.variable .. ")" or a.variable
+    }))
 end)
+
+local charByteArrayTemplate = --
+[[local _map = {}
+for e in gmatch(${aForVar}, ".") do
+    insert(_map, e)
+end
+${aVar} = _map]]
 
 add("⇎", "Convert a to char byte array", function(state)
     state:import("string")
     state:import("table")
 
     local a = state.stack[1]
-    state.push(interpolate(
-                   'local _map = {}\n%1for e in gmatch(%3, ".") do\n\t%1insert(_map, e)\n%1end\n%1%2 = _map',
-                   rep("\t", state.depth), a.variable,
-                   a.table and "concat(" .. a.variable .. ")" or a.variable))
+    state.push(i(charByteArrayTemplate, state, {
+        aVar = a.variable,
+        aForVar = a.table and "concat(" .. a.variable .. ")" or a.variable
+    }))
 end)
+
+local codepointArrayTemplate = --
+[[local _map = {}
+for e in umatch(${aForVar}, ".") do
+    insert(_map, unicode(e))
+end
+${aVar} = _map]]
 
 add("⇿", "Convert a to codepoint array", function(state)
     state:import("utf8")
     state:import("table")
 
     local a = state.stack[1]
-    state.push(interpolate(
-                   'local _map = {}\n%1for e in umatch(%3, ".") do\n\t%1insert(_map, unicode(e))\n%1end\n%1%2 = _map',
-                   rep("\t", state.depth), a.variable,
-                   a.table and "concat(" .. a.variable .. ")" or a.variable))
+    state.push(i(codepointArrayTemplate, state, {
+        aVar = a.variable,
+        aForVar = a.table and "concat(" .. a.variable .. ")" or a.variable
+    }))
 end)
 
 -- Binary

@@ -22,7 +22,6 @@ function State:onPushStack(f) insert(self.events.onPushStack, f) end
 
 function State:pushStack(object)
     if self.safe then
-        assert(object.type, "Safemode: No `type` on object")
         assert(object.transpile, "Safemode: No `transpile` on object")
     end
 
@@ -36,11 +35,12 @@ end
 function State:popStack(count, _if)
     local r = {}
     for i = 1, count do
-        insert(r, remove(self.stack, 1) or
-                   {
-                type = "unknown",
-                variable = "nil --[[ Popped empty stack. ]]"
-            })
+        local object = remove(self.stack, 1) or
+                           {variable = "nil --[[ Popped empty stack. ]]"}
+
+        object.state = state
+        function object:unpop() insert(self.state.stack, 1, self) end
+        insert(r, object)
     end
     return unpack(r)
 end
@@ -48,7 +48,6 @@ end
 local interpret = require "interpret"
 local imports = require "imports"
 
-local rep = string.rep
 function State:interpret()
     local depth = self.depth
     local code = interpret(self)
@@ -65,7 +64,7 @@ function State:interpret()
 
         return importCode .. "--// Main\n\n" .. code
     else
-        return rep("\t", depth) .. "--// λ " .. depth .. "\n" .. code
+        return ("\t"):rep(depth) .. "--// λ " .. depth .. "\n" .. code
     end
 end
 

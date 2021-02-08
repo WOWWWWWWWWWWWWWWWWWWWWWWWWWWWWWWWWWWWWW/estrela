@@ -2,7 +2,11 @@ local add = require"commands".add
 
 -- Nullary
 
-add("⭝", "Pop stack", function(state) state:popStack(1) end)
+add("⭝", "Pop a", function(state) state:popStack(1) end)
+add("⇢", "Pop a, b and push a", function(state)
+    local a, b = state:popStack(2)
+    a:unpop()
+end)
 
 local function reverse(tbl)
     local len = #tbl
@@ -32,9 +36,13 @@ end)
 
 -- Statements with subblocks
 
+local ifTemplate = --
+[[if ${condition} then
+${code}${elseClause}
+end]]
+
 add("(", "If statement: `CONDITION(CODE|ELSE)", function(state)
     local a = state:popStack(1)
-    local indent = rep("\t", state.depth)
 
     local childState, start = state:block()
     childState.terminator = "|"
@@ -47,13 +55,19 @@ add("(", "If statement: `CONDITION(CODE|ELSE)", function(state)
         elseClause = interpolate("\n%1else\n%2", indent, elseCode)
     end
 
-    state.push(interpolate("if %2 then\n%3%4\n%1end", indent, a.variable, block,
-                           elseClause))
+    state.push(i(ifTemplate, state, {
+        condition = a.variable,
+        code = block,
+        elseClause = elseClause
+    }))
 end)
 
-add("↻", "Repeat statement: `↻CODE & CONDITION)", function(state)
-    local indent = rep("\t", state.depth)
+local repeatTemplate = --
+[[repeat
+${code}
+until ${condition}]]
 
+add("↻", "Repeat statement: `↻CODE & CONDITION)", function(state)
     local childState, start = state:block()
     local block = start()
 
@@ -61,22 +75,43 @@ add("↻", "Repeat statement: `↻CODE & CONDITION)", function(state)
            "Repeat statement body should not have an empty stack")
 
     local condition = childState.stack[1].variable
-    state.push(interpolate("repeat\n%2\n%1until %3", indent, block,
-                           condition.variable, block, elseClause))
+    state.push(i(repeatTemplate, state, {code = block, condition = condition}))
 end)
 
-add("⇄", "Map each element in a: `⇄CODE)`", function(state)
+local mapTemplate = --
+[[for index, element in pairs(${aVar}) do
+${code}
+    ${mapStatement}
+end]]
+
+add("⇄", "Map each element in a: (stack: index, element) `⇄CODE)`",
+    function(state)
     local a = state.stack[1]
 
     local childState, start = state:block()
-    childState.stack = {{variable = "element"}}
+    childState.stack = {{variable = "index"}, {variable = "element"}}
     local block = start()
 
     local mapStatement = childState.stack[1] and
                              (a.variable .. "[index] = " ..
                                  childState.stack[1].variable) or ""
 
-    state.push(interpolate("for index, element in pairs(%3)\n%2\n\t%1%4\n%1end",
-                           rep("\t", state.depth), block, a.variable,
-                           mapStatement))
+    state.push(i(mapTemplate, state,
+                 {aVar = a.variable, code = block, mapStatement = mapStatement}))
+end)
+
+local forEachTemplate = --
+[[for index, element in pairs(${aVar}) do
+${code}
+end]]
+
+add("→", "For each element in a: (stack: index, element) `→CODE)`",
+    function(state)
+    local a = state.stack[1]
+
+    local childState, start = state:block()
+    childState.stack = {{variable = "index"}, {variable = "element"}}
+    local block = start()
+
+    state.push(i(forEachTemplate, state, {aVar = a.variable, code = block}))
 end)

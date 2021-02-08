@@ -1,6 +1,23 @@
 local interpret
 
-local unicode = "[%z\1-\127\194-\244][\128-\191]*"
+function i(str, state, args) -- Interpolation function
+    str = str:gsub("\n", "\n" .. ("\t"):rep(state.depth)):gsub("    ", "\t")
+    local result = str:gsub("%$%{(.-)%}", function(n) return args[n] end)
+
+    return result
+end
+
+local commands = require "commands"
+local count = commands.count
+commands = commands.commands
+
+do
+    for _, v in pairs({"constants", "operators", "statements", "table"}) do
+        require("commands." .. v)
+    end
+end
+
+print("Interpreter loaded with " .. count() .. " commands")
 
 interpret = function(state)
     local stack = state.stack
@@ -9,11 +26,12 @@ interpret = function(state)
     local buffer = {}
 
     state:onPushStack(function(object)
-        insert(buffer,
-               "local " .. object.variable .. " = " .. object:transpile())
+        table.insert(buffer,
+                     "local " .. object.variable .. " = " .. object:transpile())
     end)
 
-    state.iter = state.iter or state.input:gmatch(unicode)
+    state.iter = state.iter or
+                     state.input:gmatch("[%z\1-\127\194-\244][\128-\191]*")
     local iter = state.iter
 
     function state.next() return iter() end
@@ -23,16 +41,16 @@ interpret = function(state)
         local tk = iter()
         repeat
             if tk ~= character then
-                insert(r, tk)
+                table.insert(r, tk)
             else
                 break
             end
             tk = iter()
         until not tk
-        return concat(r)
+        return table.concat(r)
     end
 
-    function state.push(str) insert(buffer, str) end
+    function state.push(str) table.insert(buffer, str) end
 
     local tk = iter()
     state.currentMark = tk
@@ -55,20 +73,20 @@ interpret = function(state)
 
     if state.depth > 0 then
         for i, v in pairs(buffer) do
-            buffer[i] = rep("\t", state.depth) .. v
+            buffer[i] = ("\t"):rep(state.depth) .. v
         end
     elseif stack[1] then
         -- find non-statement
         for _, v in pairs(stack) do
             if not v.statement then
                 state:import("debug")
-                insert(buffer, "_debug(" .. v.variable .. ")")
+                table.insert(buffer, "_debug(" .. v.variable .. ")")
                 break
             end
         end
     end
 
-    return concat(buffer, "\n")
+    return table.concat(buffer, "\n")
 end
 
 return interpret

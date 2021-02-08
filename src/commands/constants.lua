@@ -26,7 +26,7 @@ end
 
 -- Hexadecimal modifiers
 for _, v in pairs({"A", "B", "C", "D", "E", "F"}) do
-    add({v, lower(v)}, "Hexadecimal literal " .. v, function(state)
+    add({v, v:lower()}, "Hexadecimal literal " .. v, function(state)
         local head = state.currentNumber
         if head then
             if head.hexadecimal then
@@ -44,21 +44,15 @@ for _, v in pairs({"A", "B", "C", "D", "E", "F"}) do
 end
 
 -- String literals
-local function pushstring(state, v)
+local function pushstring(state, v, char)
     local r = {table = true, v = v}
 
     function r:transpile()
-        local replace = {
-            ['"'] = '\\"',
-            ['\t'] = '\\t',
-            ['\r'] = '\\r',
-            ['\n'] = '\\n'
-        }
 
         local v = self.v
-        for from, to in pairs(replace) do v = v:gsub(from, to) end
-
-        v = v:gsub(unicode, function(c) return '"' .. c .. '", ' end)
+        if char then return '"' .. v .. '"' end
+        v = v:gsub("[%z\1-\127\194-\244][\128-\191]*",
+                   function(c) return '"' .. c .. '", ' end)
         v = v:sub(1, -3)
         return '{' .. v .. '}'
     end
@@ -70,4 +64,4 @@ add({'`', '`'}, "String literal",
     function(state) pushstring(state, state.lookFor(state.currentMark)) end)
 
 add({'ˎ', '˴'}, "Character literal",
-    function(state) pushstring(state, state.next()) end)
+    function(state) pushstring(state, state.next(), true) end)

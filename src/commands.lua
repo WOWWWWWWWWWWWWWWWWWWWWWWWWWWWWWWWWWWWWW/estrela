@@ -10,6 +10,4 @@ local function add(symbol, description, f, number)
     end
 end
 
-print("Interpreter loaded with " .. count .. " commands")
-
-return {commands = commands, add = add}
+return {commands = commands, add = add, count = function() return count end}

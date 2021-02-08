@@ -33,6 +33,20 @@ end)
 
 -- Binary
 
+add(";", "Duplicate a, b", function(state)
+    local a, b = state:popStack(2)
+
+    for i = 1, 2 do
+        local r = {a = a}
+        function r:transpile() return self.a.variable end
+        state:pushStack(r)
+
+        local r = {b = b}
+        function r:transpile() return self.b.variable end
+        state:pushStack(r)
+    end
+end)
+
 for _, v in pairs({
     {"+", "Addition"}, {"-", "Subtraction"}, {"*", "Multiplication"},
     {"/", "Division"}, {"%", "Modulus"}, {"^", "Raise to power"}
